@@ -1,4 +1,5 @@
 
+
 export enum GamePhase {
   LANDING = 'LANDING',
   LOBBY = 'LOBBY',
@@ -65,4 +66,5 @@ export type NetworkMessage =
   | { type: 'REQUEST_STATE'; payload: { playerId: string } }
   | { type: 'PLAYER_LEAVE'; payload: { playerId: string } }
   | { type: 'PLAYER_ACTION'; payload: { action: PlayerActionType; playerId: string; data?: any } }
+  | { type: 'GAME_ENDED'; payload: any }
   | { type: 'HOST_ACTION'; payload: any }; // Generic action passed to host

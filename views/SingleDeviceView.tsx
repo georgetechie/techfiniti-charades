@@ -21,14 +21,33 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
   const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0]);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // Local Setup State
-  const [newPlayerName, setNewPlayerName] = useState('');
-  const [selectedTeamForAdd, setSelectedTeamForAdd] = useState(gameState.teams[0].id);
-
-  // --- LOGIC ---
+  // Logic helpers
   const updateState = (updater: (prev: GameState) => GameState) => {
     setGameState(prev => updater(prev));
   };
+
+  // Initialize dummy players for existing teams if empty (Local Mode setup)
+  // This ensures the game engine has an "actor" for each team even though we don't name them.
+  useEffect(() => {
+      if (gameState.players.length === 0) {
+          updateState(prev => {
+              const newPlayers: Player[] = [];
+              const newTeams = prev.teams.map(t => {
+                  const dummyPlayer: Player = {
+                      id: uuidv4(),
+                      name: t.name, // Player name is just the Team name
+                      avatarSeed: uuidv4(),
+                      avatarStyle: AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)],
+                      isHost: false,
+                      teamId: t.id
+                  };
+                  newPlayers.push(dummyPlayer);
+                  return { ...t, playerIds: [dummyPlayer.id] };
+              });
+              return { ...prev, players: newPlayers, teams: newTeams };
+          });
+      }
+  }, []);
 
   // Timer Logic
   useEffect(() => {
@@ -57,50 +76,61 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
 
   // --- ACTIONS ---
 
-  const addPlayer = () => {
-      if (!newPlayerName.trim()) return;
-      const player: Player = {
-          id: uuidv4(),
-          name: newPlayerName.trim(),
-          avatarSeed: uuidv4(),
-          avatarStyle: AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)],
-          isHost: false,
-          teamId: selectedTeamForAdd
-      };
+  const addTeam = () => {
+    if (gameState.teams.length >= TEAM_COLORS.length) return;
+    
+    // Find next available color
+    const nextColorIdx = gameState.teams.length;
+    const colorData = TEAM_COLORS[nextColorIdx];
+    const newTeamId = uuidv4();
 
-      updateState(prev => {
-          // Add to global players
-          const newPlayers = [...prev.players, player];
-          // Add to team
-          const newTeams = prev.teams.map(t => 
-             t.id === selectedTeamForAdd ? { ...t, playerIds: [...t.playerIds, player.id] } : t
-          );
-          return { ...prev, players: newPlayers, teams: newTeams };
-      });
-      setNewPlayerName('');
+    // Create a dummy player for this team so turn logic works
+    const dummyPlayer: Player = {
+        id: uuidv4(),
+        name: `Team ${colorData.name}`,
+        avatarSeed: uuidv4(),
+        avatarStyle: AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)],
+        isHost: false,
+        teamId: newTeamId
+    };
+    
+    const newTeam = {
+        id: newTeamId,
+        name: `Team ${colorData.name}`,
+        color: colorData.hex,
+        score: 0,
+        playerIds: [dummyPlayer.id],
+        nextPlayerIndex: 0
+    };
+
+    updateState(prev => ({
+        ...prev,
+        players: [...prev.players, dummyPlayer],
+        teams: [...prev.teams, newTeam]
+    }));
   };
 
-  const removePlayer = (playerId: string) => {
-      updateState(prev => {
-          const newPlayers = prev.players.filter(p => p.id !== playerId);
-          const newTeams = prev.teams.map(t => ({
-              ...t,
-              playerIds: t.playerIds.filter(id => id !== playerId)
-          }));
-          return { ...prev, players: newPlayers, teams: newTeams };
-      });
+  const removeTeam = (teamId: string) => {
+    if (gameState.teams.length <= 2) return; // Minimum 2 teams
+    
+    updateState(prev => {
+        const teamToRemove = prev.teams.find(t => t.id === teamId);
+        const playerIdsToRemove = teamToRemove ? teamToRemove.playerIds : [];
+        
+        const keptTeams = prev.teams.filter(t => t.id !== teamId);
+        const keptPlayers = prev.players.filter(p => !playerIdsToRemove.includes(p.id));
+
+        return {
+            ...prev,
+            teams: keptTeams,
+            players: keptPlayers
+        };
+    });
   };
 
   const startGame = async () => {
-    // Check teams have players
-    const emptyTeams = gameState.teams.filter(t => t.playerIds.length === 0);
-    if (emptyTeams.length > 0) {
-        // Auto-fill generic players if empty
-        // This is a QoL feature for quick play
-    }
-    
-    // Check total players
-    if (gameState.players.length < 2) return alert("Need at least 2 players!");
+    // Check total teams
+    if (gameState.teams.length < 2) return alert("Need at least 2 teams!");
 
     setIsGenerating(true);
     const newClues = await generateClues(selectedCategory, clueCount, difficulty, []);
@@ -108,6 +138,7 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
     updateState(prev => {
          // Setup first turn logic
          const firstTeam = prev.teams[0];
+         // Ensure we have a valid actor (dummy player)
          const firstPlayerId = firstTeam.playerIds[0];
          
          const updatedTeams = prev.teams.map((t, idx) => 
@@ -192,52 +223,35 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
 
               {/* Roster */}
               <div className="bg-dark-800 p-6 rounded-2xl space-y-6 border border-white/5">
-                  <h3 className="text-xs uppercase font-bold text-white/40">Teams & Players</h3>
-                  
-                  <div className="flex gap-2">
-                      <select 
-                        className="bg-dark-900 p-2 rounded-lg border border-white/10"
-                        value={selectedTeamForAdd}
-                        onChange={e => setSelectedTeamForAdd(e.target.value)}
-                      >
-                          {gameState.teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
-                      <input 
-                        type="text" 
-                        placeholder="Player Name" 
-                        className="flex-1 bg-dark-900 p-2 rounded-lg border border-white/10"
-                        value={newPlayerName}
-                        onChange={e => setNewPlayerName(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addPlayer()}
-                      />
-                      <Button variant="secondary" onClick={addPlayer} disabled={!newPlayerName.trim()}>Add</Button>
+                  <div className="flex justify-between items-center">
+                      <h3 className="text-xs uppercase font-bold text-white/40">Teams ({gameState.teams.length})</h3>
+                      <Button variant="secondary" onClick={addTeam} disabled={gameState.teams.length >= TEAM_COLORS.length} className="text-xs py-2 h-auto">
+                          + Add Team
+                      </Button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {gameState.teams.map(team => (
-                          <div key={team.id} className="bg-white/5 rounded-xl p-4 border border-white/5" style={{ borderColor: team.color.replace('bg-', '').replace('500', '400') }}>
-                              <h4 className={`font-bold mb-3 ${team.color.replace('bg-', 'text-')}`}>{team.name}</h4>
-                              <div className="space-y-2">
-                                  {team.playerIds.map(pid => {
-                                      const p = gameState.players.find(pl => pl.id === pid);
-                                      if (!p) return null;
-                                      return (
-                                          <div key={p.id} className="flex justify-between items-center bg-dark-900/50 p-2 rounded-lg">
-                                              <span className="text-sm">{p.name}</span>
-                                              <button onClick={() => removePlayer(p.id)} className="text-red-400 hover:text-red-300 text-xs">✕</button>
-                                          </div>
-                                      );
-                                  })}
-                                  {team.playerIds.length === 0 && <div className="text-white/20 text-xs italic">No players</div>}
-                              </div>
+                          <div key={team.id} className="bg-white/5 rounded-xl p-4 border border-white/5 flex justify-between items-center" style={{ borderColor: team.color.replace('bg-', '').replace('500', '400') }}>
+                              <h4 className={`font-bold ${team.color.replace('bg-', 'text-')}`}>{team.name}</h4>
+                              {gameState.teams.length > 2 && (
+                                  <button 
+                                    onClick={() => removeTeam(team.id)} 
+                                    className="text-red-400 hover:text-red-300 p-2 hover:bg-white/5 rounded transition-colors"
+                                    title="Remove Team"
+                                  >✕</button>
+                              )}
                           </div>
                       ))}
+                  </div>
+                  <div className="text-center text-xs text-white/30 italic">
+                      In this mode, pass the device to any player on the current team.
                   </div>
               </div>
 
               <div className="flex gap-4">
                   <Button variant="ghost" onClick={onExit} className="flex-1">Exit</Button>
-                  <Button onClick={startGame} disabled={gameState.players.length < 2 || isGenerating} className="flex-[2]">
+                  <Button onClick={startGame} disabled={gameState.teams.length < 2 || isGenerating} className="flex-[2]">
                       {isGenerating ? 'Generating Clues...' : 'Start Game'}
                   </Button>
               </div>
@@ -248,22 +262,24 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
   if (gameState.phase === GamePhase.PLAYING && gameState.currentTurn) {
       const turn = gameState.currentTurn;
       const team = gameState.teams.find(t => t.id === turn.teamId);
-      const actor = gameState.players.find(p => p.id === turn.actorId);
-
+      // For local play, the actor name is likely just the team name, so we can ignore it if we want, or display it.
+      
       // Interstitial "Pass Device" Screen
       if (!turn.clue) {
           return (
               <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 animate-in zoom-in duration-300">
                   <div className="text-center space-y-2">
                       <h2 className="text-4xl font-bold">Pass the Device</h2>
-                      <p className="text-white/50">Hand it over to...</p>
+                      <p className="text-white/50">It is {team?.name}'s turn</p>
                   </div>
 
                   <div className="bg-dark-800 p-8 rounded-3xl border border-white/10 flex flex-col items-center gap-4 w-full max-w-sm">
-                      <Avatar seed={actor?.avatarSeed || ''} style={actor?.avatarStyle} size={120} />
+                      <div className={`w-32 h-32 rounded-full flex items-center justify-center text-5xl font-black ${team?.color.replace('bg-', 'bg-') || 'bg-gray-500'} text-white shadow-xl`}>
+                         {team?.name.charAt(team.name.length - 1)}
+                      </div>
                       <div className="text-center">
-                          <h3 className="text-3xl font-bold">{actor?.name}</h3>
-                          <p className={`text-lg font-bold ${team?.color.replace('bg-', 'text-')}`}>{team?.name}</p>
+                          <h3 className={`text-3xl font-bold ${team?.color.replace('bg-', 'text-')}`}>{team?.name}</h3>
+                          <p className="text-white/50">Get ready to act!</p>
                       </div>
                   </div>
 
@@ -289,7 +305,7 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
           <div className="flex flex-col items-center justify-center min-h-[70vh] w-full max-w-md mx-auto space-y-6">
               {/* Header Info */}
               <div className="flex justify-between w-full px-4 text-sm font-bold text-white/40 uppercase">
-                  <div>{team?.name}</div>
+                  <div className={`${team?.color.replace('bg-', 'text-')}`}>{team?.name}</div>
                   <div>Round {turn.roundNumber}</div>
               </div>
 

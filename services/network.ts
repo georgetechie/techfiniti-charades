@@ -25,13 +25,41 @@ export const createInitialState = (roomCode: string, mode: 'ONLINE' | 'LOCAL' = 
     isLocked: false,
     roundTime: INITIAL_ROUND_TIME,
     roundsToWin: 5,
-    allowPlayerControl: true, // Default true for single device usually
+    allowPlayerControl: true, // Default true
     guessingMessage: "GUESS NOW!",
     opposingTeamMessage: "Opposing Team Guessing",
   }
 });
 
-// Shared Logic for advancing turn (Moved from HostView to ensure consistency with Player Actions)
+// Helper to merge saved state with defaults to handle schema updates/migrations
+const hydrateState = (saved: any, initial: GameState): GameState => {
+    if (!saved) return initial;
+    
+    // Deep merge settings to ensure new flags (like allowPlayerControl) exist
+    const mergedSettings = { 
+        ...initial.settings, 
+        ...(saved.settings || {}) 
+    };
+    
+    // Ensure allowPlayerControl is explicitly true if it was undefined (legacy saves)
+    if (saved.settings && saved.settings.allowPlayerControl === undefined) {
+        mergedSettings.allowPlayerControl = true;
+    }
+
+    // Ensure new fields in Teams if any (e.g. nextPlayerIndex)
+    const mergedTeams = (saved.teams || []).map((t: any) => ({
+        ...t,
+        nextPlayerIndex: t.nextPlayerIndex ?? 0
+    }));
+
+    return {
+        ...saved,
+        teams: mergedTeams,
+        settings: mergedSettings
+    };
+};
+
+// Shared Logic for advancing turn
 export const calculateNextTurn = (prev: GameState, success: boolean): GameState => {
     if (!prev.currentTurn) return prev;
 
@@ -50,9 +78,7 @@ export const calculateNextTurn = (prev: GameState, success: boolean): GameState 
     );
 
     // 3. Rotate to Next Team/Player
-    // Find Current Team Index
     const currentTeamIdx = prev.teams.findIndex(t => t.id === prev.currentTurn!.teamId);
-    // Fallback if team not found (shouldn't happen)
     if (currentTeamIdx === -1) return prev;
 
     const nextTeamIdx = (currentTeamIdx + 1) % prev.teams.length;
@@ -79,7 +105,7 @@ export const calculateNextTurn = (prev: GameState, success: boolean): GameState 
         currentTurn: {
             teamId: nextTeam.id,
             actorId: actorId,
-            clue: null, // Reset clue so we go to "Next Up" screen
+            clue: null,
             timeLeft: prev.settings.roundTime,
             isActive: false,
             roundNumber: prev.currentTurn.roundNumber + 1
@@ -90,8 +116,10 @@ export const calculateNextTurn = (prev: GameState, success: boolean): GameState 
 // Hook for the HOST
 export const useHostGame = (roomCode: string) => {
   const [gameState, setGameState] = useState<GameState>(() => {
-    const saved = localStorage.getItem(`host_state_${roomCode}`);
-    return saved ? JSON.parse(saved) : createInitialState(roomCode, 'ONLINE');
+    const savedStr = localStorage.getItem(`host_state_${roomCode}`);
+    const saved = savedStr ? JSON.parse(savedStr) : null;
+    const initial = createInitialState(roomCode, 'ONLINE');
+    return hydrateState(saved, initial);
   });
   
   const gameStateRef = useRef(gameState);
@@ -104,12 +132,12 @@ export const useHostGame = (roomCode: string) => {
     localStorage.setItem(`host_state_${roomCode}`, JSON.stringify(gameState));
   }, [gameState, roomCode]);
 
-  // Broadcast state changes to all connected peers
+  // Broadcast state changes
   useEffect(() => {
     const json = JSON.stringify({ type: 'STATE_UPDATE', payload: gameState });
     connectionsRef.current.forEach(conn => {
         if (conn.open) {
-            conn.send(JSON.parse(json)); // PeerJS handles serialization, but ensuring clean obj helps
+            conn.send(JSON.parse(json));
         }
     });
   }, [gameState]);
@@ -119,10 +147,7 @@ export const useHostGame = (roomCode: string) => {
     const peerId = getPeerId(roomCode);
     console.log('Initializing Host Peer:', peerId);
     
-    const peer = new Peer(peerId, {
-        debug: 1,
-    });
-    
+    const peer = new Peer(peerId, { debug: 1 });
     peerRef.current = peer;
 
     peer.on('open', (id) => {
@@ -134,9 +159,6 @@ export const useHostGame = (roomCode: string) => {
       
       conn.on('open', () => {
          connectionsRef.current.push(conn);
-         // Send immediate state sync unless locked handling happens in data
-         // Actually, better to sync state only if allowed.
-         // However, standard flow waits for REQUEST_STATE or PLAYER_JOIN.
       });
 
       conn.on('data', (data) => {
@@ -146,34 +168,29 @@ export const useHostGame = (roomCode: string) => {
             setGameState(prev => {
                 const existingPlayer = prev.players.find(p => p.id === msg.payload.id);
                 
-                // If game is locked and player is NEW, reject
+                // Locked game check
                 if (prev.settings.isLocked && !existingPlayer) {
                     conn.send({ type: 'JOIN_ERROR', payload: { message: "Game is Locked" } });
-                    // Close connection after a moment to let message send
                     setTimeout(() => conn.close(), 500);
                     return prev;
                 }
 
                 if (existingPlayer) {
-                    // Player reconnecting: Update details (e.g. name change) but keep game state (teamId)
+                    // Update player details (reconnect)
                     const updatedPlayer = { 
                         ...msg.payload, 
                         teamId: existingPlayer.teamId,
                         isHost: existingPlayer.isHost 
                     };
-                    
                     const updatedPlayers = prev.players.map(p => 
                         p.id === msg.payload.id ? updatedPlayer : p
                     );
-                    
                     const newState = { ...prev, players: updatedPlayers };
-
-                    // IMPORTANT: Send the state explicitly to the reconnecting player immediately
                     conn.send({ type: 'STATE_UPDATE', payload: newState });
                     return newState;
                 }
                 
-                // Auto assign team logic (New Player)
+                // Add new player
                 const teamCounts = prev.teams.map(t => ({ id: t.id, count: t.playerIds.length }));
                 teamCounts.sort((a, b) => a.count - b.count);
                 const targetTeamId = teamCounts[0].id;
@@ -183,7 +200,6 @@ export const useHostGame = (roomCode: string) => {
                     t.id === targetTeamId ? { ...t, playerIds: [...t.playerIds, newPlayer.id] } : t
                 );
                 
-                // New player successfully added
                 const newState = {
                     ...prev,
                     players: [...prev.players, newPlayer],
@@ -195,8 +211,6 @@ export const useHostGame = (roomCode: string) => {
         }
 
         if (msg.type === 'REQUEST_STATE') {
-             // Only send state if the player is actually in the game or game is not locked?
-             // For simplicity, we send state. The client side will handle "Kicked" logic if they aren't in players list.
              conn.send({ type: 'STATE_UPDATE', payload: gameStateRef.current });
         }
 
@@ -204,14 +218,13 @@ export const useHostGame = (roomCode: string) => {
             const { action, playerId, data: actionData } = msg.payload;
             
             setGameState(prev => {
-                // Security/Validation: Ensure current turn actor matches requesting player
+                // Security: Ensure current turn actor matches requesting player
                 if (!prev.currentTurn || prev.currentTurn.actorId !== playerId) {
                     return prev; 
                 }
 
                 if (action === 'REVEAL_CLUE') {
-                    if (prev.currentTurn.clue) return prev; // Already revealed
-
+                    if (prev.currentTurn.clue) return prev;
                     const pending = prev.clues.filter(c => c.status === 'pending');
                     if (pending.length === 0) {
                         return { ...prev, phase: GamePhase.FINISHED };
@@ -232,8 +245,6 @@ export const useHostGame = (roomCode: string) => {
                 }
 
                 if (action === 'MARK_RESULT') {
-                    // Check if player control is enabled or if the user is somehow authorized
-                    // (The logic is generally strict, but we check the setting)
                     if (prev.settings.allowPlayerControl) {
                         const success = actionData?.success === true;
                         return calculateNextTurn(prev, success);
@@ -264,38 +275,68 @@ export const useHostGame = (roomCode: string) => {
     };
   }, [roomCode]);
 
+  // Host Action to close game
+  const closeGame = useCallback(() => {
+      connectionsRef.current.forEach(conn => {
+          if (conn.open) conn.send({ type: 'GAME_ENDED', payload: {} });
+      });
+      if (peerRef.current) {
+          setTimeout(() => peerRef.current?.destroy(), 500);
+      }
+      localStorage.removeItem(`host_state_${roomCode}`);
+  }, [roomCode]);
+
   const updateState = useCallback((updater: (prev: GameState) => GameState) => {
     setGameState(prev => updater(prev));
   }, []);
 
-  return { gameState, updateState };
+  return { gameState, updateState, closeGame };
 };
 
 // Hook for the PLAYER
 export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const gameStateRef = useRef<GameState | null>(null); // Use ref to track state inside effects without dependency
   const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [retryTrigger, setRetryTrigger] = useState(0); // Trigger to force re-setup
+
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<DataConnection | null>(null);
 
+  // Sync ref
   useEffect(() => {
-    // Player uses a random ID for the peer connection itself, 
-    // but identifying data is in the payload
+      gameStateRef.current = gameState;
+  }, [gameState]);
+
+  // Manual reconnect function
+  const reconnect = useCallback(() => {
+      console.log('Manual reconnect triggered');
+      setError(null);
+      setRetryTrigger(prev => prev + 1);
+  }, []);
+
+  useEffect(() => {
+    // Cleanup old peer if exists
+    if (peerRef.current) {
+        peerRef.current.destroy();
+    }
+
     const peer = new Peer(); 
     peerRef.current = peer;
 
     const connectToHost = () => {
         if (connRef.current?.open) return;
 
+        console.log('Connecting to host...');
         const hostId = getPeerId(roomCode);
-        console.log('Connecting to host:', hostId);
-        
         const conn = peer.connect(hostId, { reliable: true });
         connRef.current = conn;
 
         conn.on('open', () => {
             console.log('Connected to Host');
             setError(null);
+            setIsConnected(true);
             conn.send({ type: 'PLAYER_JOIN', payload: currentPlayer });
             conn.send({ type: 'REQUEST_STATE', payload: { playerId: currentPlayer.id } });
         });
@@ -305,20 +346,29 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
             if (msg.type === 'STATE_UPDATE') {
                 setGameState(msg.payload);
                 setError(null);
+                setIsConnected(true);
             }
             if (msg.type === 'JOIN_ERROR') {
                 setError(msg.payload.message);
                 conn.close();
             }
+            if (msg.type === 'GAME_ENDED') {
+                setGameState(prev => prev ? { ...prev, phase: GamePhase.FINISHED } : null);
+                setError("Host ended the game.");
+                conn.close();
+            }
         });
 
         conn.on('close', () => {
-            console.log('Disconnected from host');
+            console.warn('Connection closed');
             connRef.current = null;
+            setIsConnected(false);
         });
 
         conn.on('error', (err) => {
             console.error('Connection error', err);
+            connRef.current = null;
+            setIsConnected(false);
         });
     };
 
@@ -328,31 +378,49 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
 
     peer.on('error', (err) => {
         console.error('Player Peer Error', err);
-        setError("Could not connect to host.");
+        // Don't set error immediately for disconnects, only fatal
+        if (err.type === 'peer-unavailable') {
+             setError("Host not found. Check room code.");
+        } else if (err.type === 'unavailable-id') {
+             // Retry?
+        } else {
+             // setError("Connection Error. Try reconnecting.");
+             // Just mark disconnected, let heartbeat retry
+             setIsConnected(false);
+        }
     });
 
-    // Reconnection loop if disconnected
+    // Auto-reconnect on visibility change (app switching)
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+             if (peer.disconnected) peer.reconnect();
+             if (!connRef.current || !connRef.current.open) connectToHost();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const interval = setInterval(() => {
         if (peer.destroyed) return;
-        if (error) return; // Don't retry if we got an explicit error (like Game Locked)
+        
+        // Fatal errors stop retries
+        if (error && (error.includes("Locked") || error.includes("ended"))) return;
 
         if (!connRef.current || !connRef.current.open) {
-            if (peer.open) {
-                 connectToHost();
-            }
+            if (peer.open) connectToHost();
         } else {
-            // Heartbeat / Ensure state
-            if (!gameState) {
+             // Heartbeat: Use ref to avoid dependency cycle
+             if (!gameStateRef.current) {
                 connRef.current.send({ type: 'REQUEST_STATE', payload: { playerId: currentPlayer.id } });
-            }
+             }
         }
     }, 3000);
 
     return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
         clearInterval(interval);
         peer.destroy();
     };
-  }, [roomCode, currentPlayer.id, error, gameState]); 
+  }, [roomCode, currentPlayer.id, retryTrigger]); // Depend on retryTrigger to force restart
 
   const sendAction = useCallback((action: PlayerActionType, data?: any) => {
       if (connRef.current?.open) {
@@ -360,8 +428,10 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
               type: 'PLAYER_ACTION',
               payload: { action, playerId: currentPlayer.id, data }
           });
+      } else {
+          console.warn("Action failed: Connection not open");
       }
   }, [currentPlayer.id]);
 
-  return { gameState, sendAction, error };
+  return { gameState, sendAction, error, isConnected, reconnect };
 };
