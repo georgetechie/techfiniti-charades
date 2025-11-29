@@ -19,7 +19,8 @@ export const Avatar: React.FC<AvatarProps> = ({ seed, style = 'notionists', size
       className={`rounded-full overflow-hidden border-2 border-white/20 shadow-lg bg-gray-700 ${className}`}
       style={{ width: size, height: size }}
     >
-      <img src={src} alt="Avatar" className="w-full h-full object-cover" />
+      {/* Key forces React to re-mount the image element when src changes, preventing stale images */}
+      <img key={src} src={src} alt="Avatar" className="w-full h-full object-cover" />
     </div>
   );
 };

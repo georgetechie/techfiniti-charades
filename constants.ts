@@ -1,4 +1,5 @@
 
+
 export const TEAM_COLORS = [
   { name: 'Red', hex: 'bg-red-500', text: 'text-red-500' },
   { name: 'Blue', hex: 'bg-blue-500', text: 'text-blue-500' },
@@ -34,9 +35,10 @@ export const AVATAR_STYLES = [
   'lorelei', 
   'micah', 
   'miniavs', 
+  'notionists', 
   'open-peeps', 
   'personas', 
-  'pixel-art'
+  'thumbs'
 ];
 
 export const INITIAL_ROUND_TIME = 60;
