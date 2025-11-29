@@ -9,9 +9,10 @@ import { AVATAR_STYLES } from '../constants';
 interface LandingProps {
   onHost: (code: string, player: Player) => void;
   onJoin: (code: string, player: Player) => void;
+  onSingleDevice: () => void;
 }
 
-export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin }) => {
+export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDevice }) => {
   // Initialize state from local storage to persist identity across refreshes
   const [name, setName] = useState(() => localStorage.getItem('charades_username') || '');
   
@@ -173,6 +174,10 @@ export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin }) => {
                 </Button>
                 <Button fullWidth variant="secondary" onClick={() => setMode('JOIN')} disabled={!name}>
                     Join Existing Game
+                </Button>
+                <div className="pt-2 border-t border-white/10"></div>
+                <Button fullWidth variant="ghost" onClick={onSingleDevice} className="bg-brand-900/20 hover:bg-brand-900/40 text-brand-300">
+                    Single Device Play
                 </Button>
             </div>
         ) : (

@@ -180,6 +180,35 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
      });
   };
 
+  const kickPlayer = (playerId: string) => {
+      if (!confirm("Are you sure you want to remove this player from the game?")) return;
+
+      updateState(prev => {
+          // 1. Remove from global players list
+          const newPlayers = prev.players.filter(p => p.id !== playerId);
+
+          // 2. Remove from teams
+          const newTeams = prev.teams.map(t => ({
+              ...t,
+              playerIds: t.playerIds.filter(id => id !== playerId)
+          }));
+
+          // 3. Handle active turn
+          let newTurn = prev.currentTurn;
+          if (prev.currentTurn && prev.currentTurn.actorId === playerId) {
+              // If actor kicked, we just cancel the turn. Host can press "Force Next".
+              newTurn = { ...prev.currentTurn, isActive: false, timeLeft: 0 }; 
+          }
+
+          return {
+              ...prev,
+              players: newPlayers,
+              teams: newTeams,
+              currentTurn: newTurn
+          };
+      });
+  };
+
   const updateRoundTime = (seconds: number) => {
     updateState(prev => ({
         ...prev,
@@ -192,6 +221,13 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
         ...prev,
         settings: { ...prev.settings, allowPlayerControl: !prev.settings.allowPlayerControl }
     }));
+  };
+
+  const toggleGameLock = () => {
+      updateState(prev => ({
+          ...prev,
+          settings: { ...prev.settings, isLocked: !prev.settings.isLocked }
+      }));
   };
 
   const updateMessageSetting = (key: 'guessingMessage' | 'opposingTeamMessage', value: string) => {
@@ -282,6 +318,12 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
       updateState(prev => calculateNextTurn(prev, false)); // Forced next usually implies no score
   };
 
+  const endGame = () => {
+      if (confirm("Are you sure you want to end the game now? Final scores will be displayed.")) {
+          updateState(prev => ({ ...prev, phase: GamePhase.FINISHED }));
+      }
+  };
+
   const pickClue = () => {
     // Pick a random pending clue
     const pending = gameState.clues.filter(c => c.status === 'pending');
@@ -319,9 +361,17 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
     return (
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-             <div className="bg-dark-800 px-6 py-4 rounded-3xl border border-white/5 text-center flex-1 w-full md:w-auto">
+             <div className="bg-dark-800 px-6 py-4 rounded-3xl border border-white/5 text-center flex-1 w-full md:w-auto flex flex-col items-center">
                 <h2 className="text-sm text-white/50 uppercase font-bold tracking-wider mb-1">Join Code</h2>
-                <div className="text-5xl font-black text-brand-400 tracking-widest font-mono">{gameState.roomCode}</div>
+                <div className="text-5xl font-black text-brand-400 tracking-widest font-mono mb-2">{gameState.roomCode}</div>
+                
+                {/* Lock Toggle */}
+                <div className="flex items-center gap-2 cursor-pointer bg-white/5 px-3 py-1 rounded-full hover:bg-white/10 transition-colors" onClick={toggleGameLock}>
+                    <div className={`w-2 h-2 rounded-full ${gameState.settings.isLocked ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-white/70">
+                        {gameState.settings.isLocked ? 'LOCKED' : 'OPEN'}
+                    </span>
+                </div>
              </div>
              
              {/* Host Indicator */}
@@ -358,13 +408,22 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
                                     <Avatar seed={p.avatarSeed} style={p.avatarStyle} size={32} />
                                     <span>{p.name}</span>
                                 </div>
-                                <button 
-                                    onClick={() => movePlayer(p.id)}
-                                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded text-xs text-white/50 hover:text-white transition-all"
-                                    title="Move to next team"
-                                >
-                                    ➡️
-                                </button>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        onClick={() => movePlayer(p.id)}
+                                        className="p-1 hover:bg-white/10 rounded text-xs text-white/50 hover:text-white"
+                                        title="Move to next team"
+                                    >
+                                        ➡️
+                                    </button>
+                                    <button 
+                                        onClick={() => kickPlayer(p.id)}
+                                        className="p-1 hover:bg-red-500/20 rounded text-xs text-red-400 hover:text-red-300"
+                                        title="Kick Player"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
                             </div>
                         ))}
                          {gameState.players.filter(p => p.teamId === team.id).length === 0 && (
@@ -381,9 +440,13 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
                 <h3 className="text-xs font-bold text-white/40 uppercase mb-2">Unassigned</h3>
                 <div className="flex flex-wrap gap-2">
                     {gameState.players.filter(p => !p.isHost && !p.teamId).map(p => (
-                         <div key={p.id} className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-full cursor-pointer hover:bg-white/10" onClick={() => movePlayer(p.id)}>
+                         <div key={p.id} className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-full cursor-pointer hover:bg-white/10 group">
                              <Avatar seed={p.avatarSeed} style={p.avatarStyle} size={20} />
                              <span className="text-sm">{p.name}</span>
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); kickPlayer(p.id); }}
+                                className="w-4 h-4 flex items-center justify-center rounded-full bg-white/10 hover:bg-red-500 text-[10px] text-white/50 hover:text-white ml-1"
+                             >✕</button>
                          </div>
                     ))}
                 </div>
@@ -399,6 +462,7 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
     );
   }
 
+  // Reuse logic for other phases
   if (gameState.phase === GamePhase.SETUP) {
     return (
         <div className="max-w-2xl mx-auto space-y-6">
@@ -408,6 +472,7 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
              </div>
 
              <div className="bg-dark-800 p-6 rounded-2xl space-y-4">
+                {/* Setup Controls */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div>
                         <label className="text-xs uppercase font-bold text-white/40">Category</label>
@@ -445,8 +510,19 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
                     </div>
                 </div>
                 
-                {/* Advanced Settings: Messages & Controls */}
+                {/* Advanced Settings */}
                 <div className="space-y-3 pt-2">
+                    {/* Game Lock Toggle */}
+                    <div className="flex items-center gap-3 bg-dark-900/50 p-3 rounded-lg border border-white/5 cursor-pointer" onClick={toggleGameLock}>
+                        <div className={`w-10 h-6 rounded-full p-1 transition-colors ${gameState.settings.isLocked ? 'bg-red-500' : 'bg-white/10'}`}>
+                            <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${gameState.settings.isLocked ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                        </div>
+                        <div>
+                            <span className="text-sm font-bold block text-white/90">Lock Game</span>
+                            <span className="text-xs text-white/50 block">Prevent new players from joining</span>
+                        </div>
+                    </div>
+
                     <div className="flex items-center gap-3 bg-dark-900/50 p-3 rounded-lg border border-white/5 cursor-pointer" onClick={togglePlayerControl}>
                         <div className={`w-10 h-6 rounded-full p-1 transition-colors ${gameState.settings.allowPlayerControl ? 'bg-brand-500' : 'bg-white/10'}`}>
                             <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${gameState.settings.allowPlayerControl ? 'translate-x-4' : 'translate-x-0'}`}></div>
@@ -615,9 +691,14 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
               </div>
 
               {/* Controls */}
-               {!turn.clue && (
-                 <Button variant="ghost" onClick={nextTurn}>Force Next Player</Button>
-               )}
+               <div className="flex flex-col items-center gap-2 w-full pt-4 border-t border-white/5 mt-4">
+                   {!turn.clue && (
+                     <Button variant="ghost" onClick={nextTurn}>Force Next Player</Button>
+                   )}
+                   <Button variant="ghost" className="text-red-400 hover:text-red-300 hover:bg-red-500/10 text-xs uppercase tracking-wider" onClick={endGame}>
+                       End Game Early
+                   </Button>
+               </div>
           </div>
       );
   }

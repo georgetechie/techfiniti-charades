@@ -13,7 +13,20 @@ interface PlayerViewProps {
 }
 
 export const PlayerView: React.FC<PlayerViewProps> = ({ roomCode, player }) => {
-  const { gameState, sendAction } = usePlayerGame(roomCode, player);
+  const { gameState, sendAction, error } = usePlayerGame(roomCode, player);
+
+  if (error) {
+      return (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+              <div className="text-4xl text-red-500">⚠️</div>
+              <h2 className="text-2xl font-bold">Connection Error</h2>
+              <p className="text-white/60">{error}</p>
+              <Button onClick={() => window.location.reload()} variant="secondary" className="mt-4">
+                  Go Back
+              </Button>
+          </div>
+      );
+  }
 
   if (!gameState) {
     return (
@@ -24,9 +37,22 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ roomCode, player }) => {
     );
   }
 
-  const myTeam = gameState.teams.find(t => t.id === player.teamId);
-  // Re-find player from state to ensure we have assigned teamId
+  // Check if player is still in the game (might have been kicked)
   const meInState = gameState.players.find(p => p.id === player.id);
+  
+  if (!meInState && gameState.phase !== GamePhase.FINISHED) {
+      return (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+              <div className="text-6xl text-gray-500">🚫</div>
+              <h2 className="text-2xl font-bold">You have been removed</h2>
+              <p className="text-white/50">The moderator has removed you from the game.</p>
+              <Button onClick={() => window.location.reload()} variant="secondary" className="mt-4">
+                  Back to Menu
+              </Button>
+          </div>
+      );
+  }
+
   const myRealTeamId = meInState?.teamId;
 
   if (gameState.phase === GamePhase.LOBBY) {

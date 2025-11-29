@@ -1,11 +1,13 @@
+
 import React, { useState } from 'react';
 import { Player, GamePhase } from './types';
 import { LandingView } from './views/Landing';
 import { HostView } from './views/HostView';
 import { PlayerView } from './views/PlayerView';
+import { SingleDeviceView } from './views/SingleDeviceView';
 
 export default function App() {
-  const [role, setRole] = useState<'NONE' | 'HOST' | 'PLAYER'>('NONE');
+  const [role, setRole] = useState<'NONE' | 'HOST' | 'PLAYER' | 'SINGLE'>('NONE');
   const [roomCode, setRoomCode] = useState<string>('');
   const [playerInfo, setPlayerInfo] = useState<Player | null>(null);
 
@@ -19,6 +21,10 @@ export default function App() {
     setRoomCode(code);
     setPlayerInfo(player);
     setRole('PLAYER');
+  };
+
+  const handleSingleDevice = () => {
+      setRole('SINGLE');
   };
 
   const handleLeave = () => {
@@ -37,7 +43,7 @@ export default function App() {
         </div>
         {role !== 'NONE' && (
              <div className="flex items-center gap-4">
-                 <span className="hidden sm:inline-block text-sm text-white/50">Room: <strong className="text-white">{roomCode}</strong></span>
+                 {role !== 'SINGLE' && <span className="hidden sm:inline-block text-sm text-white/50">Room: <strong className="text-white">{roomCode}</strong></span>}
                  <button onClick={handleLeave} className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1 rounded-full transition-colors">
                     Exit
                  </button>
@@ -47,7 +53,7 @@ export default function App() {
 
       <main className="flex-1 flex flex-col p-4 md:p-6 max-w-5xl mx-auto w-full">
         {role === 'NONE' && (
-          <LandingView onHost={handleHostCreate} onJoin={handlePlayerJoin} />
+          <LandingView onHost={handleHostCreate} onJoin={handlePlayerJoin} onSingleDevice={handleSingleDevice} />
         )}
         {role === 'HOST' && playerInfo && (
           <HostView roomCode={roomCode} hostPlayer={playerInfo} />
@@ -55,10 +61,13 @@ export default function App() {
         {role === 'PLAYER' && playerInfo && (
           <PlayerView roomCode={roomCode} player={playerInfo} />
         )}
+        {role === 'SINGLE' && (
+            <SingleDeviceView onExit={handleLeave} />
+        )}
       </main>
       
       {/* Disclaimer for demo environment */}
-      {role !== 'NONE' && (
+      {role !== 'NONE' && role !== 'SINGLE' && (
         <div className="fixed bottom-2 right-2 text-[10px] text-white/20 max-w-[200px] text-right pointer-events-none">
             Demo Mode: Open this URL in another tab to join as a player.
         </div>

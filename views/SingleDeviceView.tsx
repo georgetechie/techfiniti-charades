@@ -1,0 +1,356 @@
+
+import React, { useState, useEffect } from 'react';
+import { GameState, GamePhase, Clue, Player } from '../types';
+import { createInitialState, calculateNextTurn } from '../services/network';
+import { generateClues } from '../services/geminiService';
+import { Button } from '../components/Button';
+import { ClueCard } from '../components/ClueCard';
+import { Avatar } from '../components/Avatar';
+import { CATEGORIES, TEAM_COLORS, AVATAR_STYLES } from '../constants';
+import { v4 as uuidv4 } from 'uuid';
+
+interface SingleDeviceViewProps {
+  onExit: () => void;
+}
+
+export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) => {
+  // Local state management without PeerJS
+  const [gameState, setGameState] = useState<GameState>(createInitialState('LOCAL', 'LOCAL'));
+  const [clueCount, setClueCount] = useState(20);
+  const [difficulty, setDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium');
+  const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Local Setup State
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [selectedTeamForAdd, setSelectedTeamForAdd] = useState(gameState.teams[0].id);
+
+  // --- LOGIC ---
+  const updateState = (updater: (prev: GameState) => GameState) => {
+    setGameState(prev => updater(prev));
+  };
+
+  // Timer Logic
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (gameState.phase === GamePhase.PLAYING && gameState.currentTurn?.isActive) {
+      interval = setInterval(() => {
+        updateState(prev => {
+          if (!prev.currentTurn || !prev.currentTurn.isActive) return prev;
+          
+          const newTime = prev.currentTurn.timeLeft - 1;
+          
+          if (newTime <= 0) {
+             // Time expired
+             return calculateNextTurn(prev, false);
+          }
+
+          return {
+            ...prev,
+            currentTurn: { ...prev.currentTurn, timeLeft: newTime }
+          };
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [gameState.phase, gameState.currentTurn?.isActive]);
+
+  // --- ACTIONS ---
+
+  const addPlayer = () => {
+      if (!newPlayerName.trim()) return;
+      const player: Player = {
+          id: uuidv4(),
+          name: newPlayerName.trim(),
+          avatarSeed: uuidv4(),
+          avatarStyle: AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)],
+          isHost: false,
+          teamId: selectedTeamForAdd
+      };
+
+      updateState(prev => {
+          // Add to global players
+          const newPlayers = [...prev.players, player];
+          // Add to team
+          const newTeams = prev.teams.map(t => 
+             t.id === selectedTeamForAdd ? { ...t, playerIds: [...t.playerIds, player.id] } : t
+          );
+          return { ...prev, players: newPlayers, teams: newTeams };
+      });
+      setNewPlayerName('');
+  };
+
+  const removePlayer = (playerId: string) => {
+      updateState(prev => {
+          const newPlayers = prev.players.filter(p => p.id !== playerId);
+          const newTeams = prev.teams.map(t => ({
+              ...t,
+              playerIds: t.playerIds.filter(id => id !== playerId)
+          }));
+          return { ...prev, players: newPlayers, teams: newTeams };
+      });
+  };
+
+  const startGame = async () => {
+    // Check teams have players
+    const emptyTeams = gameState.teams.filter(t => t.playerIds.length === 0);
+    if (emptyTeams.length > 0) {
+        // Auto-fill generic players if empty
+        // This is a QoL feature for quick play
+    }
+    
+    // Check total players
+    if (gameState.players.length < 2) return alert("Need at least 2 players!");
+
+    setIsGenerating(true);
+    const newClues = await generateClues(selectedCategory, clueCount, difficulty, []);
+    
+    updateState(prev => {
+         // Setup first turn logic
+         const firstTeam = prev.teams[0];
+         const firstPlayerId = firstTeam.playerIds[0];
+         
+         const updatedTeams = prev.teams.map((t, idx) => 
+            idx === 0 ? { ...t, nextPlayerIndex: 1 } : t
+         );
+
+         return {
+            ...prev,
+            phase: GamePhase.PLAYING,
+            clues: newClues,
+            teams: updatedTeams,
+            currentTurn: {
+                teamId: firstTeam.id,
+                actorId: firstPlayerId,
+                clue: null,
+                timeLeft: prev.settings.roundTime,
+                isActive: false,
+                roundNumber: 1
+            }
+         };
+    });
+    setIsGenerating(false);
+  };
+
+  // Game Flow
+  const pickClue = () => {
+      const pending = gameState.clues.filter(c => c.status === 'pending');
+      if (pending.length === 0) {
+          updateState(prev => ({ ...prev, phase: GamePhase.FINISHED }));
+          return;
+      }
+      const nextClue = pending[Math.floor(Math.random() * pending.length)];
+      updateState(prev => ({
+          ...prev,
+          currentTurn: prev.currentTurn ? { ...prev.currentTurn, clue: nextClue } : null
+      }));
+  };
+
+  const startTimer = () => {
+      updateState(prev => ({
+          ...prev,
+          currentTurn: prev.currentTurn ? { ...prev.currentTurn, isActive: true } : null
+      }));
+  };
+
+  const markResult = (success: boolean) => {
+      updateState(prev => calculateNextTurn(prev, success));
+  };
+
+
+  // --- RENDERERS ---
+
+  if (gameState.phase === GamePhase.LOBBY) {
+      // Re-purposing Lobby as Setup Screen for Single Device
+      return (
+          <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in">
+              <div className="text-center space-y-2">
+                  <h2 className="text-3xl font-bold">Game Setup</h2>
+                  <p className="text-white/50">Pass & Play Mode</p>
+              </div>
+
+              {/* Game Settings */}
+              <div className="bg-dark-800 p-6 rounded-2xl space-y-4 border border-white/5">
+                  <h3 className="text-xs uppercase font-bold text-white/40">Settings</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="col-span-2">
+                          <label className="text-xs text-white/50 block mb-1">Category</label>
+                          <select className="w-full bg-dark-900 p-2 rounded-lg border border-white/10" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
+                              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="text-xs text-white/50 block mb-1">Questions</label>
+                          <input type="number" className="w-full bg-dark-900 p-2 rounded-lg border border-white/10" value={clueCount} onChange={e => setClueCount(Number(e.target.value))} />
+                      </div>
+                      <div>
+                          <label className="text-xs text-white/50 block mb-1">Time (s)</label>
+                          <input type="number" className="w-full bg-dark-900 p-2 rounded-lg border border-white/10" value={gameState.settings.roundTime} onChange={e => updateState(p => ({...p, settings: {...p.settings, roundTime: Number(e.target.value)}}))} step={5} />
+                      </div>
+                  </div>
+              </div>
+
+              {/* Roster */}
+              <div className="bg-dark-800 p-6 rounded-2xl space-y-6 border border-white/5">
+                  <h3 className="text-xs uppercase font-bold text-white/40">Teams & Players</h3>
+                  
+                  <div className="flex gap-2">
+                      <select 
+                        className="bg-dark-900 p-2 rounded-lg border border-white/10"
+                        value={selectedTeamForAdd}
+                        onChange={e => setSelectedTeamForAdd(e.target.value)}
+                      >
+                          {gameState.teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                      <input 
+                        type="text" 
+                        placeholder="Player Name" 
+                        className="flex-1 bg-dark-900 p-2 rounded-lg border border-white/10"
+                        value={newPlayerName}
+                        onChange={e => setNewPlayerName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && addPlayer()}
+                      />
+                      <Button variant="secondary" onClick={addPlayer} disabled={!newPlayerName.trim()}>Add</Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {gameState.teams.map(team => (
+                          <div key={team.id} className="bg-white/5 rounded-xl p-4 border border-white/5" style={{ borderColor: team.color.replace('bg-', '').replace('500', '400') }}>
+                              <h4 className={`font-bold mb-3 ${team.color.replace('bg-', 'text-')}`}>{team.name}</h4>
+                              <div className="space-y-2">
+                                  {team.playerIds.map(pid => {
+                                      const p = gameState.players.find(pl => pl.id === pid);
+                                      if (!p) return null;
+                                      return (
+                                          <div key={p.id} className="flex justify-between items-center bg-dark-900/50 p-2 rounded-lg">
+                                              <span className="text-sm">{p.name}</span>
+                                              <button onClick={() => removePlayer(p.id)} className="text-red-400 hover:text-red-300 text-xs">✕</button>
+                                          </div>
+                                      );
+                                  })}
+                                  {team.playerIds.length === 0 && <div className="text-white/20 text-xs italic">No players</div>}
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+
+              <div className="flex gap-4">
+                  <Button variant="ghost" onClick={onExit} className="flex-1">Exit</Button>
+                  <Button onClick={startGame} disabled={gameState.players.length < 2 || isGenerating} className="flex-[2]">
+                      {isGenerating ? 'Generating Clues...' : 'Start Game'}
+                  </Button>
+              </div>
+          </div>
+      );
+  }
+
+  if (gameState.phase === GamePhase.PLAYING && gameState.currentTurn) {
+      const turn = gameState.currentTurn;
+      const team = gameState.teams.find(t => t.id === turn.teamId);
+      const actor = gameState.players.find(p => p.id === turn.actorId);
+
+      // Interstitial "Pass Device" Screen
+      if (!turn.clue) {
+          return (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 animate-in zoom-in duration-300">
+                  <div className="text-center space-y-2">
+                      <h2 className="text-4xl font-bold">Pass the Device</h2>
+                      <p className="text-white/50">Hand it over to...</p>
+                  </div>
+
+                  <div className="bg-dark-800 p-8 rounded-3xl border border-white/10 flex flex-col items-center gap-4 w-full max-w-sm">
+                      <Avatar seed={actor?.avatarSeed || ''} style={actor?.avatarStyle} size={120} />
+                      <div className="text-center">
+                          <h3 className="text-3xl font-bold">{actor?.name}</h3>
+                          <p className={`text-lg font-bold ${team?.color.replace('bg-', 'text-')}`}>{team?.name}</p>
+                      </div>
+                  </div>
+
+                  <Button onClick={pickClue} className="text-xl py-4 px-12 animate-pulse-fast">
+                      I'm Ready!
+                  </Button>
+
+                  {/* Scoreboard Preview */}
+                  <div className="flex gap-4 opacity-50">
+                      {gameState.teams.map(t => (
+                          <div key={t.id} className="text-center">
+                              <div className={`text-xs font-bold ${t.color.replace('bg-', 'text-')}`}>{t.name}</div>
+                              <div className="font-mono text-xl">{t.score}</div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          );
+      }
+
+      // Active Clue Screen
+      return (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] w-full max-w-md mx-auto space-y-6">
+              {/* Header Info */}
+              <div className="flex justify-between w-full px-4 text-sm font-bold text-white/40 uppercase">
+                  <div>{team?.name}</div>
+                  <div>Round {turn.roundNumber}</div>
+              </div>
+
+              {/* Clue Card */}
+              <ClueCard text={turn.clue.text} category={selectedCategory} />
+
+              {/* Timer & Controls */}
+              <div className="w-full text-center space-y-6">
+                  <div className={`text-6xl font-mono font-black transition-colors ${turn.timeLeft < 10 ? 'text-red-500' : 'text-white'}`}>
+                      {turn.timeLeft}
+                  </div>
+
+                  {!turn.isActive && turn.timeLeft > 0 && (
+                      <Button onClick={startTimer} className="w-full text-xl py-4 animate-bounce-small">
+                          Start Timer
+                      </Button>
+                  )}
+
+                  {turn.isActive && (
+                      <div className="flex gap-4">
+                          <Button variant="danger" fullWidth className="py-6 text-lg" onClick={() => markResult(false)}>
+                              Skip
+                          </Button>
+                          <Button variant="primary" fullWidth className="py-6 text-lg" onClick={() => markResult(true)}>
+                              Got It!
+                          </Button>
+                      </div>
+                  )}
+
+                  {turn.timeLeft === 0 && (
+                      <div className="text-white/50">Time's Up!</div>
+                  )}
+              </div>
+              
+              <Button variant="ghost" onClick={onExit} className="mt-8 text-white/20 hover:text-white">
+                  Exit Game
+              </Button>
+          </div>
+      );
+  }
+
+  if (gameState.phase === GamePhase.FINISHED) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-8 animate-in zoom-in">
+            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-300 to-brand-500">
+                Game Over!
+            </h1>
+            
+            <div className="grid grid-cols-2 gap-8">
+               {gameState.teams.map(t => (
+                   <div key={t.id} className="bg-dark-800 p-6 rounded-2xl border border-white/10">
+                       <h2 className={`text-2xl font-bold mb-2 ${t.color.replace('bg-', 'text-')}`}>{t.name}</h2>
+                       <p className="text-7xl font-black text-white">{t.score}</p>
+                   </div>
+               ))}
+            </div>
+
+            <Button className="mt-12 py-4 px-8" onClick={onExit}>Back to Menu</Button>
+        </div>
+      );
+  }
+
+  return null;
+};

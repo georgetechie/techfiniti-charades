@@ -10,8 +10,9 @@ const APP_PREFIX = 'charades-genai-party-2025';
 const getPeerId = (code: string) => `${APP_PREFIX}-${code}`;
 
 // Initial state factory
-export const createInitialState = (roomCode: string): GameState => ({
+export const createInitialState = (roomCode: string, mode: 'ONLINE' | 'LOCAL' = 'ONLINE'): GameState => ({
   roomCode,
+  mode,
   phase: GamePhase.LOBBY,
   players: [],
   teams: [
@@ -21,9 +22,10 @@ export const createInitialState = (roomCode: string): GameState => ({
   clues: [],
   currentTurn: null,
   settings: {
+    isLocked: false,
     roundTime: INITIAL_ROUND_TIME,
     roundsToWin: 5,
-    allowPlayerControl: false,
+    allowPlayerControl: true, // Default true for single device usually
     guessingMessage: "GUESS NOW!",
     opposingTeamMessage: "Opposing Team Guessing",
   }
@@ -89,7 +91,7 @@ export const calculateNextTurn = (prev: GameState, success: boolean): GameState 
 export const useHostGame = (roomCode: string) => {
   const [gameState, setGameState] = useState<GameState>(() => {
     const saved = localStorage.getItem(`host_state_${roomCode}`);
-    return saved ? JSON.parse(saved) : createInitialState(roomCode);
+    return saved ? JSON.parse(saved) : createInitialState(roomCode, 'ONLINE');
   });
   
   const gameStateRef = useRef(gameState);
@@ -132,8 +134,9 @@ export const useHostGame = (roomCode: string) => {
       
       conn.on('open', () => {
          connectionsRef.current.push(conn);
-         // Send immediate state sync
-         conn.send({ type: 'STATE_UPDATE', payload: gameStateRef.current });
+         // Send immediate state sync unless locked handling happens in data
+         // Actually, better to sync state only if allowed.
+         // However, standard flow waits for REQUEST_STATE or PLAYER_JOIN.
       });
 
       conn.on('data', (data) => {
@@ -143,6 +146,14 @@ export const useHostGame = (roomCode: string) => {
             setGameState(prev => {
                 const existingPlayer = prev.players.find(p => p.id === msg.payload.id);
                 
+                // If game is locked and player is NEW, reject
+                if (prev.settings.isLocked && !existingPlayer) {
+                    conn.send({ type: 'JOIN_ERROR', payload: { message: "Game is Locked" } });
+                    // Close connection after a moment to let message send
+                    setTimeout(() => conn.close(), 500);
+                    return prev;
+                }
+
                 if (existingPlayer) {
                     // Player reconnecting: Update details (e.g. name change) but keep game state (teamId)
                     const updatedPlayer = { 
@@ -171,16 +182,21 @@ export const useHostGame = (roomCode: string) => {
                 const newTeams = prev.teams.map(t => 
                     t.id === targetTeamId ? { ...t, playerIds: [...t.playerIds, newPlayer.id] } : t
                 );
-
-                return {
+                
+                // New player successfully added
+                const newState = {
                     ...prev,
                     players: [...prev.players, newPlayer],
                     teams: newTeams
                 };
+                conn.send({ type: 'STATE_UPDATE', payload: newState });
+                return newState;
             });
         }
 
         if (msg.type === 'REQUEST_STATE') {
+             // Only send state if the player is actually in the game or game is not locked?
+             // For simplicity, we send state. The client side will handle "Kicked" logic if they aren't in players list.
              conn.send({ type: 'STATE_UPDATE', payload: gameStateRef.current });
         }
 
@@ -241,8 +257,6 @@ export const useHostGame = (roomCode: string) => {
 
     peer.on('error', (err) => {
         console.error('Host Peer Error:', err);
-        // If ID is taken (e.g. refresh), we might want to alert, 
-        // but often the old peer just needs to time out.
     });
 
     return () => {
@@ -260,6 +274,7 @@ export const useHostGame = (roomCode: string) => {
 // Hook for the PLAYER
 export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<DataConnection | null>(null);
 
@@ -280,6 +295,7 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
 
         conn.on('open', () => {
             console.log('Connected to Host');
+            setError(null);
             conn.send({ type: 'PLAYER_JOIN', payload: currentPlayer });
             conn.send({ type: 'REQUEST_STATE', payload: { playerId: currentPlayer.id } });
         });
@@ -288,6 +304,11 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
             const msg = data as NetworkMessage;
             if (msg.type === 'STATE_UPDATE') {
                 setGameState(msg.payload);
+                setError(null);
+            }
+            if (msg.type === 'JOIN_ERROR') {
+                setError(msg.payload.message);
+                conn.close();
             }
         });
 
@@ -307,11 +328,14 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
 
     peer.on('error', (err) => {
         console.error('Player Peer Error', err);
+        setError("Could not connect to host.");
     });
 
     // Reconnection loop if disconnected
     const interval = setInterval(() => {
         if (peer.destroyed) return;
+        if (error) return; // Don't retry if we got an explicit error (like Game Locked)
+
         if (!connRef.current || !connRef.current.open) {
             if (peer.open) {
                  connectToHost();
@@ -328,7 +352,7 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
         clearInterval(interval);
         peer.destroy();
     };
-  }, [roomCode, currentPlayer.id]); // Dependencies must allow reconnect if player structure is stable
+  }, [roomCode, currentPlayer.id, error, gameState]); 
 
   const sendAction = useCallback((action: PlayerActionType, data?: any) => {
       if (connRef.current?.open) {
@@ -339,5 +363,5 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
       }
   }, [currentPlayer.id]);
 
-  return { gameState, sendAction };
+  return { gameState, sendAction, error };
 };

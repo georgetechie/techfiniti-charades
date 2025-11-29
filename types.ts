@@ -33,6 +33,7 @@ export interface Clue {
 
 export interface GameState {
   roomCode: string;
+  mode: 'ONLINE' | 'LOCAL'; // Distinguish between networked and single device
   phase: GamePhase;
   players: Player[];
   teams: Team[];
@@ -46,6 +47,7 @@ export interface GameState {
     roundNumber: number;
   } | null;
   settings: {
+    isLocked: boolean; // New players cannot join
     roundTime: number; // Seconds
     roundsToWin: number;
     allowPlayerControl: boolean; // Allow actor to mark success/skip
@@ -59,6 +61,7 @@ export type PlayerActionType = 'REVEAL_CLUE' | 'START_TIMER' | 'MARK_RESULT';
 export type NetworkMessage = 
   | { type: 'STATE_UPDATE'; payload: GameState }
   | { type: 'PLAYER_JOIN'; payload: Player }
+  | { type: 'JOIN_ERROR'; payload: { message: string } }
   | { type: 'REQUEST_STATE'; payload: { playerId: string } }
   | { type: 'PLAYER_LEAVE'; payload: { playerId: string } }
   | { type: 'PLAYER_ACTION'; payload: { action: PlayerActionType; playerId: string; data?: any } }
