@@ -1,0 +1,5 @@
+{
+  "name": "Charades AI Party",
+  "description": "A modern, team-based charades game where the host controls the flow and AI generates the clues. Supports local multiplayer simulation via browser tabs.",
+  "requestFramePermissions": []
+}
