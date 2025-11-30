@@ -120,6 +120,13 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
     });
   };
 
+  const updateTeamName = (teamId: string, newName: string) => {
+    updateState(prev => ({
+        ...prev,
+        teams: prev.teams.map(t => t.id === teamId ? { ...t, name: newName } : t)
+    }));
+  };
+
   const shuffleTeams = () => {
     updateState(prev => {
         // Only shuffle players who are currently in teams or are NOT the host
@@ -433,7 +440,13 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {gameState.teams.map(team => (
                 <div key={team.id} className={`p-4 rounded-2xl bg-white/5 border-2 relative transition-all`} style={{ borderColor: team.color.replace('bg-', '').replace('500', '400') }}>
-                    <h3 className={`font-bold mb-4 text-center ${team.color.replace('bg-', 'text-')}`}>{team.name}</h3>
+                    <input 
+                        type="text"
+                        value={team.name}
+                        onChange={(e) => updateTeamName(team.id, e.target.value)}
+                        className={`font-bold mb-4 text-center bg-transparent border-b border-white/20 focus:border-white focus:outline-none w-full ${team.color.replace('bg-', 'text-')}`}
+                        placeholder="Team Name"
+                    />
                     <div className="space-y-2">
                         {gameState.players.filter(p => p.teamId === team.id).map(p => (
                             <div key={p.id} className="flex items-center justify-between bg-dark-900/50 p-2 rounded-lg group">

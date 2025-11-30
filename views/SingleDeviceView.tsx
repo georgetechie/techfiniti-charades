@@ -127,6 +127,13 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
         };
     });
   };
+  
+  const updateTeamName = (teamId: string, newName: string) => {
+    updateState(prev => ({
+        ...prev,
+        teams: prev.teams.map(t => t.id === teamId ? { ...t, name: newName } : t)
+    }));
+  };
 
   const startGame = async () => {
     // Check total teams
@@ -233,7 +240,13 @@ export const SingleDeviceView: React.FC<SingleDeviceViewProps> = ({ onExit }) =>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {gameState.teams.map(team => (
                           <div key={team.id} className="bg-white/5 rounded-xl p-4 border border-white/5 flex justify-between items-center" style={{ borderColor: team.color.replace('bg-', '').replace('500', '400') }}>
-                              <h4 className={`font-bold ${team.color.replace('bg-', 'text-')}`}>{team.name}</h4>
+                              <input 
+                                type="text"
+                                value={team.name}
+                                onChange={(e) => updateTeamName(team.id, e.target.value)}
+                                className={`font-bold bg-transparent border-b border-white/20 focus:border-white focus:outline-none w-full ${team.color.replace('bg-', 'text-')}`}
+                                placeholder="Team Name"
+                              />
                               {gameState.teams.length > 2 && (
                                   <button 
                                     onClick={() => removeTeam(team.id)} 
