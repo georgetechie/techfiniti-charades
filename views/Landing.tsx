@@ -69,8 +69,14 @@ export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDe
 
   const createGame = () => {
     if (!name) return alert('Please enter your name');
-    // Generate a simple 4 digit code
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    
+    // Generate 6-char alphanumeric code (Uppercase)
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
     const player: Player = {
       id: playerId,
       name,
@@ -83,7 +89,7 @@ export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDe
 
   const joinGame = () => {
     if (!name) return alert('Please enter your name');
-    if (!joinCode || joinCode.length !== 4) return alert('Please enter a valid 4-digit room code');
+    if (!joinCode || joinCode.length !== 6) return alert('Please enter a valid 6-character room code');
     
     const player: Player = {
       id: playerId,
@@ -185,14 +191,14 @@ export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDe
                  <div>
                     <label className="text-xs font-bold text-white/50 uppercase ml-1 mb-1 block">Room Code</label>
                     <input
-                        type="number"
-                        placeholder="0000"
-                        className="w-full bg-dark-900 border border-white/10 rounded-xl px-4 py-4 text-center font-black text-3xl tracking-[1em] focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all placeholder:text-white/10"
+                        type="text"
+                        placeholder="ABC123"
+                        className="w-full bg-dark-900 border border-white/10 rounded-xl px-4 py-4 text-center font-black text-3xl tracking-[0.25em] focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all placeholder:text-white/10 uppercase"
                         value={joinCode}
-                        onChange={(e) => setJoinCode(e.target.value.slice(0, 4))}
+                        onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
                     />
                  </div>
-                <Button fullWidth onClick={joinGame} disabled={!name || joinCode.length !== 4}>
+                <Button fullWidth onClick={joinGame} disabled={!name || joinCode.length !== 6}>
                     Enter Room
                 </Button>
                 <Button fullWidth variant="ghost" onClick={() => setMode('MENU')}>
