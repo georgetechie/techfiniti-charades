@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useHostGame, calculateNextTurn } from '../services/network';
 import { Player, Clue, GamePhase } from '../types';
 import { generateClues } from '../services/geminiService';
@@ -20,6 +20,11 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
   const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [customClue, setCustomClue] = useState('');
+  
+  // Import State
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Add host to player list initially if not there, BUT DO NOT ADD TO TEAM
   useEffect(() => {
@@ -268,6 +273,34 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
       const clue: Clue = { id: uuidv4(), text: customClue, status: 'pending' };
       updateState(prev => ({ ...prev, clues: [...prev.clues, clue] }));
       setCustomClue('');
+  };
+
+  // Import Logic
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const text = event.target?.result as string;
+          setImportText(text);
+      };
+      reader.readAsText(file);
+      // Reset input so same file can be selected again if needed
+      e.target.value = '';
+  };
+
+  const processImport = () => {
+      const lines = importText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      const newClues: Clue[] = lines.map(text => ({
+          id: uuidv4(),
+          text,
+          status: 'pending'
+      }));
+      
+      updateState(prev => ({ ...prev, clues: [...prev.clues, ...newClues] }));
+      setImportText('');
+      setShowImport(false);
   };
 
   const removeClue = (id: string) => {
@@ -565,16 +598,53 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
                 </div>
              </div>
 
-             <div className="flex gap-2">
-                 <input 
-                    type="text" 
-                    placeholder="Type custom clue..." 
-                    className="flex-1 bg-dark-800 border border-white/10 rounded-xl px-4 focus:outline-none focus:border-brand-500"
-                    value={customClue}
-                    onChange={(e) => setCustomClue(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addCustomClue()}
-                 />
-                 <Button variant="secondary" onClick={addCustomClue}>Add</Button>
+             <div className="space-y-3">
+                 <div className="flex gap-2">
+                     <input 
+                        type="text" 
+                        placeholder="Type custom clue..." 
+                        className="flex-1 bg-dark-800 border border-white/10 rounded-xl px-4 focus:outline-none focus:border-brand-500"
+                        value={customClue}
+                        onChange={(e) => setCustomClue(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && addCustomClue()}
+                     />
+                     <Button variant="secondary" onClick={addCustomClue}>Add</Button>
+                     <Button variant="secondary" onClick={() => setShowImport(!showImport)}>
+                         {showImport ? 'Close' : 'Import List'}
+                     </Button>
+                 </div>
+                 
+                 {/* Import Section */}
+                 {showImport && (
+                    <div className="bg-dark-900 p-4 rounded-xl border border-white/10 space-y-3 animate-in fade-in slide-in-from-top-2">
+                        <div className="flex justify-between items-center">
+                             <h3 className="font-bold text-sm text-white/60">Import Clues</h3>
+                             <button onClick={() => setShowImport(false)} className="text-white/40 hover:text-white">✕</button>
+                        </div>
+                        <textarea
+                            className="w-full bg-dark-800 p-3 rounded-lg border border-white/10 h-32 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-brand-500"
+                            placeholder="Paste list here (one clue per line)..."
+                            value={importText}
+                            onChange={(e) => setImportText(e.target.value)}
+                        />
+                        <div className="flex gap-2">
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                className="hidden"
+                                accept=".txt,.csv"
+                                onChange={handleFileUpload}
+                            />
+                            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="text-sm">
+                                📁 Load File
+                            </Button>
+                            <Button onClick={processImport} className="flex-1 text-sm" disabled={!importText.trim()}>
+                                Add Clues
+                            </Button>
+                        </div>
+                        <p className="text-[10px] text-white/30">Supports .txt and .csv files.</p>
+                    </div>
+                 )}
              </div>
 
              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
