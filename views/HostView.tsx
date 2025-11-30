@@ -258,7 +258,12 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
        // Ideally verify enough players
        // return alert("Need at least 2 players!");
     }
-    updateState(prev => ({ ...prev, phase: GamePhase.SETUP }));
+    // Update state and Auto-Lock the game
+    updateState(prev => ({ 
+        ...prev, 
+        phase: GamePhase.SETUP,
+        settings: { ...prev.settings, isLocked: true }
+    }));
   };
 
   const generateGameClues = async () => {

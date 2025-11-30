@@ -120,6 +120,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ roomCode, player }) => {
               const turn = gameState.currentTurn;
               const isMyTurn = turn.actorId === player.id;
               const actor = gameState.players.find(p => p.id === turn.actorId);
+              const activeTeam = gameState.teams.find(t => t.id === turn.teamId);
               const isMyTeamTurn = myRealTeamId === turn.teamId;
               const canControl = gameState.settings.allowPlayerControl;
               const totalTime = gameState.settings?.roundTime || INITIAL_ROUND_TIME;
@@ -128,11 +129,15 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ roomCode, player }) => {
                   <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-8 w-full max-w-md mx-auto">
                       
                       {/* Status Header */}
-                      <div className="bg-dark-800 px-6 py-2 rounded-full border border-white/10 text-sm font-bold flex items-center gap-2 relative z-10">
-                           <span>Round {turn.roundNumber}</span>
-                           <span className="w-1 h-1 bg-white/30 rounded-full"></span>
+                      <div className="bg-dark-800 px-4 py-2 rounded-full border border-white/10 text-xs font-bold flex items-center gap-2 relative z-10 shadow-lg">
+                           <span className="text-white/50">R{turn.roundNumber}</span>
+                           <span className="w-1 h-1 bg-white/20 rounded-full"></span>
+                           <span className={`${activeTeam?.color.replace('bg-', 'text-')} font-black uppercase tracking-wider`}>
+                               {activeTeam?.name}
+                           </span>
+                           <span className="w-1 h-1 bg-white/20 rounded-full"></span>
                            <span className={isMyTeamTurn ? 'text-green-400' : 'text-white/50'}>
-                               {isMyTeamTurn ? 'Your Team' : 'Opponent Turn'}
+                               {isMyTeamTurn ? 'You' : 'Opponent'}
                            </span>
                       </div>
 
