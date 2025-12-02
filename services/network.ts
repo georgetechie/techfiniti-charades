@@ -390,14 +390,26 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
         }
     });
 
-    // Auto-reconnect on visibility change (app switching)
-    const handleVisibilityChange = () => {
+    // Auto-reconnect logic handles both visibility (tab switching) and focus (window activation)
+    const handleReconnection = () => {
         if (document.visibilityState === 'visible') {
-             if (peer.disconnected) peer.reconnect();
-             if (!connRef.current || !connRef.current.open) connectToHost();
+            console.log('App gained focus/visibility. Checking connection...');
+             // Clear transient errors/warnings to allow UI to show connecting state
+            if (error && error.includes("Connection lost")) setError(null);
+
+            if (peer.disconnected && !peer.destroyed) {
+                console.log('Peer disconnected, attempting reconnect...');
+                peer.reconnect();
+            }
+            if (!connRef.current || !connRef.current.open) {
+                console.log('Connection closed, attempting connectToHost...');
+                connectToHost();
+            }
         }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    document.addEventListener('visibilitychange', handleReconnection);
+    window.addEventListener('focus', handleReconnection);
 
     const interval = setInterval(() => {
         if (peer.destroyed) return;
@@ -416,7 +428,8 @@ export const usePlayerGame = (roomCode: string, currentPlayer: Player) => {
     }, 3000);
 
     return () => {
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        document.removeEventListener('visibilitychange', handleReconnection);
+        window.removeEventListener('focus', handleReconnection);
         clearInterval(interval);
         peer.destroy();
     };
