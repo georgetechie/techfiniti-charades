@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Player, GamePhase } from './types';
 import { LandingView } from './views/Landing';
@@ -10,15 +9,15 @@ export default function App() {
   const [role, setRole] = useState<'NONE' | 'HOST' | 'PLAYER' | 'SINGLE'>('NONE');
   const [roomCode, setRoomCode] = useState<string>('');
   const [playerInfo, setPlayerInfo] = useState<Player | null>(null);
-  const [initialJoinCode, setInitialJoinCode] = useState<string>('');
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    if (code) {
-      setInitialJoinCode(code);
+  
+  // Initialize from URL immediately to ensure child components get the prop on first render
+  const [initialJoinCode] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+       const params = new URLSearchParams(window.location.search);
+       return params.get('code') || '';
     }
-  }, []);
+    return '';
+  });
 
   const handleHostCreate = (code: string, hostPlayer: Player) => {
     setRoomCode(code);

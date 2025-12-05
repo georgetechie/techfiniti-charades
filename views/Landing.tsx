@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Player } from '../types';
@@ -41,6 +40,14 @@ export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDe
 
   const [mode, setMode] = useState<'MENU' | 'JOIN'>(initialCode ? 'JOIN' : 'MENU');
   const [joinCode, setJoinCode] = useState(initialCode || '');
+
+  // Watch for external code updates (e.g. from URL params)
+  useEffect(() => {
+    if (initialCode) {
+        setJoinCode(initialCode);
+        setMode('JOIN');
+    }
+  }, [initialCode]);
 
   // Persist name whenever it changes
   useEffect(() => {
