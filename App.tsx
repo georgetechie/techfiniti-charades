@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Player, GamePhase } from './types';
 import { LandingView } from './views/Landing';
 import { HostView } from './views/HostView';
@@ -10,6 +10,15 @@ export default function App() {
   const [role, setRole] = useState<'NONE' | 'HOST' | 'PLAYER' | 'SINGLE'>('NONE');
   const [roomCode, setRoomCode] = useState<string>('');
   const [playerInfo, setPlayerInfo] = useState<Player | null>(null);
+  const [initialJoinCode, setInitialJoinCode] = useState<string>('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (code) {
+      setInitialJoinCode(code);
+    }
+  }, []);
 
   const handleHostCreate = (code: string, hostPlayer: Player) => {
     setRoomCode(code);
@@ -31,7 +40,7 @@ export default function App() {
     setRole('NONE');
     setRoomCode('');
     setPlayerInfo(null);
-    window.location.reload(); // Simple cleanup
+    window.location.href = window.location.pathname; // Clear params on exit
   };
 
   return (
@@ -53,7 +62,12 @@ export default function App() {
 
       <main className="flex-1 flex flex-col p-4 md:p-6 max-w-5xl mx-auto w-full">
         {role === 'NONE' && (
-          <LandingView onHost={handleHostCreate} onJoin={handlePlayerJoin} onSingleDevice={handleSingleDevice} />
+          <LandingView 
+            onHost={handleHostCreate} 
+            onJoin={handlePlayerJoin} 
+            onSingleDevice={handleSingleDevice}
+            initialCode={initialJoinCode}
+          />
         )}
         {role === 'HOST' && playerInfo && (
           <HostView roomCode={roomCode} hostPlayer={playerInfo} />

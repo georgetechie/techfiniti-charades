@@ -10,9 +10,10 @@ interface LandingProps {
   onHost: (code: string, player: Player) => void;
   onJoin: (code: string, player: Player) => void;
   onSingleDevice: () => void;
+  initialCode?: string;
 }
 
-export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDevice }) => {
+export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDevice, initialCode }) => {
   // Initialize state from local storage to persist identity across refreshes
   const [name, setName] = useState(() => localStorage.getItem('charades_username') || '');
   
@@ -38,8 +39,8 @@ export const LandingView: React.FC<LandingProps> = ({ onHost, onJoin, onSingleDe
       return localStorage.getItem('charades_avatar_style') || AVATAR_STYLES[0];
   });
 
-  const [mode, setMode] = useState<'MENU' | 'JOIN'>('MENU');
-  const [joinCode, setJoinCode] = useState('');
+  const [mode, setMode] = useState<'MENU' | 'JOIN'>(initialCode ? 'JOIN' : 'MENU');
+  const [joinCode, setJoinCode] = useState(initialCode || '');
 
   // Persist name whenever it changes
   useEffect(() => {

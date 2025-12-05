@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { Avatar } from '../components/Avatar';
 import { CATEGORIES, TEAM_COLORS } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
+import QRCode from 'react-qr-code';
 
 interface HostViewProps {
   roomCode: string;
@@ -402,13 +403,21 @@ export const HostView: React.FC<HostViewProps> = ({ roomCode, hostPlayer }) => {
   if (gameState.phase === GamePhase.LOBBY) {
     // Active players (excluding host)
     const activePlayers = gameState.players.filter(p => !p.isHost);
+    const joinUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?code=${gameState.roomCode}`;
 
     return (
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
              <div className="bg-dark-800 px-6 py-4 rounded-3xl border border-white/5 text-center flex-1 w-full md:w-auto flex flex-col items-center">
-                <h2 className="text-sm text-white/50 uppercase font-bold tracking-wider mb-1">Join Code</h2>
-                <div className="text-5xl font-black text-brand-400 tracking-widest font-mono mb-2">{gameState.roomCode}</div>
+                <div className="flex gap-4 items-center mb-4">
+                    <div className="bg-white p-2 rounded-lg">
+                        <QRCode value={joinUrl} size={80} />
+                    </div>
+                    <div className="text-left">
+                        <h2 className="text-sm text-white/50 uppercase font-bold tracking-wider mb-1">Join Code</h2>
+                        <div className="text-5xl font-black text-brand-400 tracking-widest font-mono mb-2">{gameState.roomCode}</div>
+                    </div>
+                </div>
                 
                 {/* Lock Toggle */}
                 <div className="flex items-center gap-2 cursor-pointer bg-white/5 px-3 py-1 rounded-full hover:bg-white/10 transition-colors" onClick={toggleGameLock}>

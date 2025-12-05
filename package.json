@@ -13,7 +13,8 @@
     "@google/genai": "^1.30.0",
     "uuid": "^13.0.0",
     "react-dom": "^19.2.0",
-    "peerjs": "1.5.4"
+    "peerjs": "1.5.4",
+    "react-qr-code": "2.0.15"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
